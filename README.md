@@ -1,41 +1,24 @@
 # 点金术选股系统手机版
 
-本项目有两个版本：
+这是外出时用手机查看的公网页面，不要求手机和电脑在同一个局域网。
 
-- `public/`：外出手机版。部署到公网后，手机不需要和电脑在同一局域网，直接打开固定网址查看。
-- `app.py`：本地调试版。只用于在电脑上测试数据接口。
-
-## 外出手机版
-
-外出使用的核心文件在 `public/`：
+线上地址：
 
 ```text
-public/index.html
-public/data/latest.json
-public/manifest.webmanifest
+https://diwuhai77-maker.github.io/dianjinshu-mobile/
 ```
 
-`build_static.py` 会读取 AkShare 数据，生成 `public/data/latest.json`。网页只读取这个 JSON，所以部署后手机端不需要 Python，也不需要电脑开机。
+## 工作方式
 
-本项目已经加入 GitHub Pages 自动更新配置：
-
-```text
-.github/workflows/update-pages.yml
-```
-
-把整个文件夹上传到 GitHub 仓库后，启用 GitHub Pages，Actions 会在交易日北京时间 17:30 自动生成数据并发布网页。也可以在 GitHub Actions 页面手动点 `Run workflow` 立即更新。
+- `public/` 是手机访问的静态网页。
+- `build_static.py` 负责抓取 AkShare 数据并生成 `public/data/latest.json`。
+- GitHub Actions 每个交易日自动运行一次，生成新数据并发布到 GitHub Pages。
+- 手机只访问 GitHub Pages，不需要电脑开机。
 
 ## 本地测试
 
-生成静态数据：
-
 ```powershell
 C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe build_static.py
-```
-
-本地预览公网版本：
-
-```powershell
 cd public
 C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe -m http.server 8770
 ```
@@ -46,15 +29,6 @@ C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe -m htt
 http://127.0.0.1:8770
 ```
 
-## 功能
+## 数据策略
 
-- ETF 观察：自动监控 562500、512760、563230、159326。
-- A股候选：按点金术条件输出候选股。
-- 静态发布：手机直接查看结果，不依赖局域网。
-- PWA 支持：手机浏览器可以添加到桌面。
-
-## 依赖
-
-```powershell
-C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe -m pip install -r requirements.txt
-```
+优先使用东方财富实时源，严格按 PE、股息率、ROE、市值、利润增长、MA120 进行筛选。若实时源不稳定，自动降级为备用源，用 ROE、利润增长和 MA120 生成观察候选，避免手机端空白。

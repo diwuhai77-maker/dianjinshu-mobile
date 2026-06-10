@@ -14,7 +14,7 @@
       --muted: #667085;
       --line: #d8e0ea;
       --green: #14745f;
-      --gold: #b4862f;
+      --gold: #986100;
       --red: #b42318;
       --shadow: 0 10px 22px rgba(16, 24, 40, .08);
     }
@@ -97,7 +97,7 @@
     }
     .card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
     .code { color: var(--muted); font-size: 12px; margin-top: 2px; }
-    .price { font-size: 22px; font-weight: 850; }
+    .price { font-size: 22px; font-weight: 850; text-align: right; }
     .badge {
       display: inline-flex;
       align-items: center;
@@ -110,18 +110,19 @@
       font-size: 12px;
       font-weight: 800;
     }
-    .badge.wait { background: #fff5e6; color: #986100; }
+    .badge.wait { background: #fff5e6; color: var(--gold); }
     .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
     .kv span { display: block; color: var(--muted); font-size: 11px; }
     .kv b { display: block; margin-top: 2px; font-size: 14px; overflow-wrap: anywhere; }
-    .empty, .error {
-      padding: 18px;
+    .empty, .error, .notice {
+      padding: 14px;
       border: 1px dashed var(--line);
       border-radius: 8px;
       background: #fbfcfe;
       color: var(--muted);
       text-align: center;
     }
+    .notice { margin-bottom: 10px; text-align: left; }
     .error { color: var(--red); border-color: #f1b8b4; background: #fff1f0; text-align: left; }
     @media (min-width: 680px) {
       .stack { grid-template-columns: repeat(2, 1fr); }
@@ -175,10 +176,13 @@
       <div class="head">
         <div>
           <h2>A股候选</h2>
-          <p class="hint">严格条件：PE、股息率、ROE、市值、利润增长、MA120偏离。</p>
+          <p class="hint">优先按 PE、股息率、ROE、市值、利润增长、MA120；备用源缺字段时显示观察候选。</p>
         </div>
       </div>
-      <div class="body"><div id="stockList" class="stack"><div class="empty">读取中</div></div></div>
+      <div class="body">
+        <div id="stockNote"></div>
+        <div id="stockList" class="stack"><div class="empty">读取中</div></div>
+      </div>
     </section>
   </main>
 
@@ -219,8 +223,9 @@
     }
 
     function renderStocks(rows, note) {
+      $("stockNote").innerHTML = note ? `<div class="notice">${note}</div>` : "";
       if (!rows.length) {
-        $("stockList").innerHTML = `<div class="empty">${note || "当前没有符合点金术条件的候选股"}</div>`;
+        $("stockList").innerHTML = '<div class="empty">当前没有可展示的 A 股候选</div>';
         return;
       }
       $("stockList").innerHTML = rows.slice(0, 50).map(row => `
@@ -229,7 +234,8 @@
             <div><strong>${row.name || "-"}</strong><div class="code">${row.code || "-"} · ${row.industry || "-"}</div></div>
             <div class="price">${fmt(row.price)}</div>
           </div>
-          <span class="badge">评分 ${row.score || 0}</span>
+          <span class="badge ${row.candidate_type === "观察候选" ? "wait" : ""}">${row.candidate_type || "候选"} · 评分 ${row.score || 0}</span>
+          <div class="code" style="margin-top:6px;">${row.reason || ""}${row.distance_to_buy !== null && row.distance_to_buy !== undefined ? "，距买点 " + pct(row.distance_to_buy) : ""}</div>
           <div class="kv">
             <div><span>PE</span><b>${fmt(row.pe)}</b></div>
             <div><span>股息率</span><b>${pct(row.dividend_yield)}</b></div>
@@ -258,7 +264,7 @@
         $("mSource").textContent = stockPayload.source || "--";
         renderEtfs(etfs);
         renderStocks(stocks, stockPayload.note || data.stocks?.error);
-        if (!data.etf?.ok) $("etfList").innerHTML = `<div class="error">${data.etf?.error || "ETF更新失败"}</div>`;
+        if (!data.etf?.ok) $("etfList").innerHTML = `<div class="error">${data.etf?.error || "ETF 更新失败"}</div>`;
       } catch (err) {
         $("stamp").textContent = "读取失败";
         $("etfList").innerHTML = `<div class="error">${err.message}</div>`;

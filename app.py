@@ -75,6 +75,22 @@ def clean_json(value: Any) -> Any:
     return value
 
 
+def is_mainland_stock_code(code: str) -> bool:
+    return len(code) == 6 and code.isdigit() and code.startswith(("00", "30", "60", "68"))
+
+
+def first_column(df: pd.DataFrame, *names: str, contains: tuple[str, ...] | None = None) -> str | None:
+    for name in names:
+        if name in df.columns:
+            return name
+    if contains:
+        for column in df.columns:
+            text = str(column)
+            if all(part in text for part in contains):
+                return column
+    return None
+
+
 def lan_ips() -> list[str]:
     ips = {"127.0.0.1"}
     try:
@@ -85,8 +101,9 @@ def lan_ips() -> list[str]:
                 ips.add(ip)
     except Exception:
         pass
+
     def rank(ip: str) -> tuple[int, str]:
-        if ip.startswith(("192.168.", "10.")) or ip.startswith("172."):
+        if ip.startswith(("192.168.", "10.", "172.")):
             return (0, ip)
         if ip == "127.0.0.1":
             return (2, ip)
@@ -107,12 +124,34 @@ def fetch_ma120(code: str, is_etf: bool = False) -> float:
             df = ak.fund_etf_hist_sina(symbol=code)
     else:
         df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start, end_date=end, adjust="")
-    if df.empty or "收盘" not in df.columns:
+    close_col = first_column(df, "收盘", "close", contains=("收", "盘"))
+    if df.empty or not close_col:
         return math.nan
-    closes = pd.to_numeric(df["收盘"], errors="coerce").dropna()
+    closes = pd.to_numeric(df[close_col], errors="coerce").dropna()
     if len(closes) < 120:
         return math.nan
     return float(closes.tail(120).mean())
+
+
+def fetch_price_ma120(code: str) -> tuple[float, float]:
+    import akshare as ak
+
+    end = dt.date.today().strftime("%Y%m%d")
+    start = (dt.date.today() - dt.timedelta(days=300)).strftime("%Y%m%d")
+    try:
+        prefix = "sh" if code.startswith(("60", "68")) else "sz"
+        df = ak.stock_zh_a_daily(symbol=f"{prefix}{code}", adjust="")
+    except Exception:
+        df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start, end_date=end, adjust="")
+    close_col = first_column(df, "收盘", "close", contains=("收", "盘"))
+    if df.empty or not close_col:
+        return math.nan, math.nan
+    closes = pd.to_numeric(df[close_col], errors="coerce").dropna()
+    if closes.empty:
+        return math.nan, math.nan
+    price = float(closes.iloc[-1])
+    ma120 = float(closes.tail(120).mean()) if len(closes) >= 120 else math.nan
+    return price, ma120
 
 
 def etf_monitor(force: bool = False) -> dict[str, Any]:
@@ -132,13 +171,16 @@ def etf_monitor(force: bool = False) -> dict[str, Any]:
             last_error = exc
             time.sleep(1.2 * (attempt + 1))
     if spot is None:
-        raise RuntimeError(f"ETF实时数据读取失败：{last_error}")
+        raise RuntimeError(f"ETF 实时数据读取失败：{last_error}")
 
+    code_col = first_column(spot, "代码")
+    name_col = first_column(spot, "名称")
+    price_col = first_column(spot, "最新价", "现价")
     rows = []
     for code, default_name in ETF_WATCHLIST.items():
-        hit = spot[spot["代码"].astype(str).str.zfill(6) == code]
+        hit = spot[spot[code_col].astype(str).str.zfill(6) == code] if code_col else pd.DataFrame()
         item = hit.iloc[0].to_dict() if not hit.empty else {}
-        price = finite(item.get("最新价"))
+        price = finite(item.get(price_col)) if price_col else math.nan
         try:
             ma120 = fetch_ma120(code, is_etf=True)
         except Exception:
@@ -147,10 +189,10 @@ def etf_monitor(force: bool = False) -> dict[str, Any]:
         deviation = (price - ma120) / ma120 * 100 if math.isfinite(price) and math.isfinite(ma120) else math.nan
         gap = (price - buy_point) / buy_point * 100 if math.isfinite(price) and math.isfinite(buy_point) else math.nan
         reached = math.isfinite(price) and math.isfinite(buy_point) and price <= buy_point
-        status = "达到点金术买点" if reached else f"距离买点还差 {gap:.2f}%" if math.isfinite(gap) else "实时价已更新，MA120暂缺"
+        status = "达到点金术买点" if reached else f"距离买点还差 {gap:.2f}%" if math.isfinite(gap) else "实时价已更新，MA120 暂缺"
         rows.append({
             "code": code,
-            "name": item.get("名称") or default_name,
+            "name": item.get(name_col) if name_col else default_name,
             "price": pct(price),
             "ma120": pct(ma120),
             "deviation": pct(deviation),
@@ -187,100 +229,120 @@ def finance_maps() -> tuple[dict[str, dict[str, Any]], dict[str, float]]:
     import akshare as ak
 
     current_year = dt.date.today().year - 1
-    years = [current_year, current_year - 1, current_year - 2]
     finance: dict[str, dict[str, Any]] = {}
-    for year in years:
-        try:
-            report = ak.stock_yjbb_em(date=f"{year}1231")
-        except Exception:
-            continue
+    try:
+        report = ak.stock_yjbb_em(date=f"{current_year}1231")
+    except Exception:
+        report = pd.DataFrame()
+
+    if not report.empty:
+        code_col = first_column(report, "股票代码", "代码")
+        name_col = first_column(report, "股票简称", "名称")
+        profit_col = first_column(report, "净利润-净利润", contains=("净利润",))
+        roe_col = first_column(report, "净资产收益率", contains=("净资产收益率",))
+        industry_col = first_column(report, "所处行业", "行业")
+        growth_col = first_column(report, "净利润-同比增长", contains=("净利润", "同比"))
         for item in report.to_dict("records"):
-            code = str(item.get("股票代码", "")).zfill(6)
-            if not code:
+            code = str(item.get(code_col, "")).zfill(6) if code_col else ""
+            if len(code) != 6 or not code.isdigit():
                 continue
-            finance.setdefault(code, {})[f"profit_{year}"] = finite(item.get("净利润-净利润"))
-            if year == current_year:
-                finance[code]["roe"] = finite(item.get("净资产收益率"))
-                finance[code]["industry"] = item.get("所处行业") or "-"
+            finance[code] = {
+                f"profit_{current_year}": finite(item.get(profit_col)) if profit_col else math.nan,
+                "roe": finite(item.get(roe_col)) if roe_col else math.nan,
+                "industry": item.get(industry_col) if industry_col else "-",
+                "name": item.get(name_col) if name_col else code,
+                "profit_growth": finite(item.get(growth_col)) if growth_col else math.nan,
+            }
 
     dividend: dict[str, float] = {}
     try:
         div_df = ak.stock_history_dividend()
-        for item in div_df.to_dict("records"):
-            code = str(item.get("代码", "")).zfill(6)
-            dividend[code] = finite(item.get("平均股息")) / 10
     except Exception:
-        pass
+        div_df = pd.DataFrame()
+    if not div_df.empty:
+        code_col = first_column(div_df, "代码", "股票代码")
+        dividend_col = first_column(div_df, "年均股息", "平均股息", contains=("股息",))
+        for item in div_df.to_dict("records"):
+            code = str(item.get(code_col, "")).zfill(6) if code_col else ""
+            annual_dividend = finite(item.get(dividend_col)) if dividend_col else math.nan
+            if len(code) == 6 and code.isdigit() and math.isfinite(annual_dividend) and annual_dividend > 0:
+                dividend[code] = annual_dividend / 10
     return finance, dividend
 
 
 def stock_rows(limit: int | None) -> list[dict[str, Any]]:
     import akshare as ak
 
-    last_error = None
     spot = None
     source = "东方财富"
-    for attempt in range(1):
-        try:
-            spot = ak.stock_zh_a_spot_em()
-            break
-        except Exception as exc:
-            last_error = exc
-            time.sleep(1.5 * (attempt + 1))
-    if spot is None:
+    try:
+        spot = ak.stock_zh_a_spot_em()
+    except Exception:
         try:
             spot = ak.stock_zh_a_spot()
             source = "新浪备用"
-        except Exception as exc:
-            raise RuntimeError(f"A股实时列表读取失败：东方财富错误={last_error}；新浪错误={exc}") from exc
-    if limit:
-        spot = spot.head(limit)
-
-    if source == "新浪备用":
-        rows = []
-        for item in spot.to_dict("records"):
-            code_digits = "".join(ch for ch in str(item.get("代码", "")) if ch.isdigit())
-            rows.append({
-                "code": code_digits[-6:].zfill(6),
-                "name": item.get("名称"),
-                "industry": "-",
-                "price": finite(item.get("最新价")),
-                "pe": math.nan,
-                "dividend_yield": math.nan,
-                "roe": math.nan,
-                "market_cap": math.nan,
-                "profit_growth": math.nan,
-                "profit_ok": False,
-                "is_st": "ST" in str(item.get("名称", "")).upper(),
-                "_source": source,
-            })
-        return rows
+        except Exception:
+            spot = None
 
     finance, dividend = finance_maps()
     current_year = dt.date.today().year - 1
+    if spot is None or spot.empty:
+        rows = []
+        for code, fin in finance.items():
+            profit = finite(fin.get(f"profit_{current_year}"))
+            growth = finite(fin.get("profit_growth"))
+            rows.append({
+                "code": code,
+                "name": fin.get("name", code),
+                "industry": fin.get("industry", "-"),
+                "price": math.nan,
+                "pe": math.nan,
+                "dividend_yield": math.nan,
+                "annual_dividend": dividend.get(code, math.nan),
+                "roe": fin.get("roe", math.nan),
+                "market_cap": math.nan,
+                "profit_growth": growth,
+                "profit_ok": profit > 0 and growth > 0 if math.isfinite(profit) and math.isfinite(growth) else False,
+                "is_st": "ST" in str(fin.get("name", "")).upper(),
+                "_source": "基本面备用",
+            })
+        return rows[:limit] if limit else rows
+
+    if limit:
+        spot = spot.head(limit)
+
+    code_col = first_column(spot, "代码")
+    name_col = first_column(spot, "名称")
+    price_col = first_column(spot, "最新价", "现价")
+    pe_col = first_column(spot, "市盈率-动态", "市盈率")
+    market_cap_col = first_column(spot, "总市值", "总市值-亿")
     rows = []
     for item in spot.to_dict("records"):
-        code_digits = "".join(ch for ch in str(item.get("代码", "")) if ch.isdigit())
+        code_digits = "".join(ch for ch in str(item.get(code_col, "")) if ch.isdigit()) if code_col else ""
         code = code_digits[-6:].zfill(6)
-        price = finite(item.get("最新价"))
+        if len(code) != 6 or not code.isdigit():
+            continue
+        price = finite(item.get(price_col)) if price_col else math.nan
         fin = finance.get(code, {})
-        p1 = finite(fin.get(f"profit_{current_year - 2}"))
-        p2 = finite(fin.get(f"profit_{current_year - 1}"))
-        p3 = finite(fin.get(f"profit_{current_year}"))
-        growth = ((p3 - p2) / abs(p2) * 100) if p2 > 0 and math.isfinite(p3) else math.nan
+        profit = finite(fin.get(f"profit_{current_year}"))
+        growth = finite(fin.get("profit_growth"))
         annual_dividend = dividend.get(code, math.nan)
+        market_cap = finite(item.get(market_cap_col)) if market_cap_col else math.nan
+        if math.isfinite(market_cap) and market_cap > 1000000:
+            market_cap = market_cap / 100000000
         rows.append({
             "code": code,
-            "name": item.get("名称"),
+            "name": item.get(name_col) if name_col else fin.get("name", code),
             "industry": fin.get("industry", "-"),
             "price": price,
-            "pe": finite(item.get("市盈率-动态")),
+            "pe": finite(item.get(pe_col)) if pe_col else math.nan,
             "dividend_yield": annual_dividend / price * 100 if price and math.isfinite(annual_dividend) else math.nan,
+            "annual_dividend": annual_dividend,
             "roe": fin.get("roe", math.nan),
-            "market_cap": finite(item.get("总市值")) / 100000000,
+            "market_cap": market_cap,
             "profit_growth": growth,
-            "profit_ok": p3 > p2 > p1 > 0 if all(math.isfinite(x) for x in [p1, p2, p3]) else False,
-            "is_st": "ST" in str(item.get("名称", "")).upper(),
+            "profit_ok": profit > 0 and growth > 0 if math.isfinite(profit) and math.isfinite(growth) else False,
+            "is_st": "ST" in str(item.get(name_col, "")).upper() if name_col else False,
             "_source": source,
         })
     return rows
@@ -288,11 +350,18 @@ def stock_rows(limit: int | None) -> list[dict[str, Any]]:
 
 def add_ma120(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     with ThreadPoolExecutor(max_workers=6) as pool:
-        future_map = {pool.submit(fetch_ma120, row["code"], False): row for row in rows}
+        future_map = {pool.submit(fetch_price_ma120, row["code"]): row for row in rows}
         for future in as_completed(future_map):
             row = future_map[future]
             try:
-                row["ma120"] = future.result()
+                price, ma120 = future.result()
+                if not math.isfinite(finite(row.get("price"))) and math.isfinite(price):
+                    row["price"] = price
+                row["ma120"] = ma120
+                annual_dividend = finite(row.get("annual_dividend"))
+                current_price = finite(row.get("price"))
+                if not math.isfinite(finite(row.get("dividend_yield"))) and current_price > 0 and math.isfinite(annual_dividend):
+                    row["dividend_yield"] = annual_dividend / current_price * 100
             except Exception:
                 row["ma120"] = math.nan
     return rows
@@ -307,38 +376,79 @@ def scan_stocks(force: bool = False, limit: int | None = 50) -> dict[str, Any]:
     rows = stock_rows(limit)
     source = rows[0].get("_source", "AkShare") if rows else "AkShare"
     raw_count = len(rows)
-    prefiltered = [
-        row for row in rows
-        if finite(row.get("pe")) < 20
-        and finite(row.get("dividend_yield")) > 3
-        and finite(row.get("roe")) > 10
-        and finite(row.get("market_cap")) > 50
-        and row.get("profit_ok")
-        and not row.get("is_st")
-    ]
+
+    strict_source = source == "东方财富"
+    if strict_source:
+        prefiltered = [
+            row for row in rows
+            if finite(row.get("pe")) < 20
+            and finite(row.get("dividend_yield")) > 3
+            and finite(row.get("roe")) > 10
+            and finite(row.get("market_cap")) > 50
+            and row.get("profit_ok")
+            and not row.get("is_st")
+        ]
+    else:
+        prefiltered = [
+            row for row in rows
+            if is_mainland_stock_code(str(row.get("code", "")))
+            and finite(row.get("roe")) > 10
+            and row.get("profit_ok")
+            and not row.get("is_st")
+        ]
+        prefiltered.sort(
+            key=lambda row: (
+                finite(row.get("annual_dividend"), 0),
+                finite(row.get("roe"), 0),
+                finite(row.get("profit_growth"), 0),
+            ),
+            reverse=True,
+        )
+        prefiltered = prefiltered[:80]
+
     rows = add_ma120(prefiltered)
     result = []
+    watch_rows = []
     for row in rows:
         price = finite(row.get("price"))
         ma120 = finite(row.get("ma120"))
-        row["deviation"] = (price - ma120) / ma120 * 100 if ma120 else math.nan
-        if ma120 > 0 and price < ma120 * 0.88:
-            row["score"] = score_stock(row)
-            row["buy_price"] = price
-            row["add_price_1"] = price * 0.9
-            row["add_price_2"] = price * 0.8
-            row["take_profit_1"] = price * 1.1
-            row["take_profit_2"] = ma120 * 1.12
+        if not math.isfinite(price) or not math.isfinite(ma120) or ma120 <= 0:
+            continue
+        dividend_known = math.isfinite(finite(row.get("dividend_yield")))
+        dividend_ok = finite(row.get("dividend_yield")) > 3 if strict_source else True
+        if not dividend_ok:
+            continue
+        row["deviation"] = (price - ma120) / ma120 * 100
+        row["score"] = score_stock(row)
+        row["buy_price"] = price
+        row["add_price_1"] = price * 0.9
+        row["add_price_2"] = price * 0.8
+        row["take_profit_1"] = price * 1.1
+        row["take_profit_2"] = ma120 * 1.12
+        row["distance_to_buy"] = (price - ma120 * 0.88) / (ma120 * 0.88) * 100
+        if price < ma120 * 0.88 and (dividend_known or not strict_source):
+            row["candidate_type"] = "买点候选"
+            row["reason"] = "低于 MA120 的 88%，符合点金术价格买点"
             result.append(row)
+        else:
+            row["candidate_type"] = "观察候选"
+            row["reason"] = "基本面通过，等待价格进一步靠近买点"
+            watch_rows.append(row)
 
     result.sort(key=lambda x: x.get("score", 0), reverse=True)
+    watch_rows.sort(key=lambda x: finite(x.get("distance_to_buy"), 999))
+    display_rows = result if result else watch_rows[:20]
+    note = ""
+    if source != "东方财富":
+        note = "当前实时源降级：PE、市值或股息字段可能缺失，已用 ROE、利润增长、MA120 生成观察候选；显示买点候选时仍按 MA120 价格规则判断。"
     payload = {
         "updated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "count": len(result),
+        "count": len(display_rows),
+        "strict_count": len(result),
         "source": source,
-        "note": "当前使用新浪备用实时源，缺少 PE、市值等字段，严格筛选可能没有结果。" if source == "新浪备用" else "",
+        "note": note,
         "checked": raw_count,
-        "rows": result,
+        "rows": display_rows,
     }
     write_cache(cache_name, clean_json(payload))
     return payload
