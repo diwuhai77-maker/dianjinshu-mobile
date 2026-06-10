@@ -4,6 +4,7 @@ import datetime as dt
 import json
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import app
 
@@ -25,7 +26,7 @@ def main() -> None:
     etf = safe_call("ETF", app.etf_monitor, True)
     stocks = safe_call("A股", app.scan_stocks, True, 50)
     payload = {
-        "generated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "generated_at": dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S"),
         "etf": etf,
         "stocks": stocks,
         "version": "mobile-cloud-1",
