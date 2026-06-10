@@ -1,0 +1,9 @@
+{
+  "name": "点金术选股",
+  "short_name": "点金术",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#0f1720",
+  "lang": "zh-CN"
+}

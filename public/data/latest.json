@@ -1,0 +1,81 @@
+{
+  "generated_at": "2026-06-10 10:41:22",
+  "etf": {
+    "ok": true,
+    "payload": {
+      "updated_at": "2026-06-10 10:40:47",
+      "rows": [
+        {
+          "code": "562500",
+          "name": "机器人ETF华夏",
+          "price": 1.133,
+          "ma120": 1.0441,
+          "deviation": 8.5136,
+          "buy_point": 0.9188,
+          "status": "距离买点还差 23.31%",
+          "reached": false,
+          "add_price_1": 1.0197,
+          "add_price_2": 0.9064,
+          "take_profit_1": 1.2463,
+          "take_profit_2": 1.1694
+        },
+        {
+          "code": "512760",
+          "name": "芯片ETF国泰",
+          "price": 1.118,
+          "ma120": 1.4261,
+          "deviation": -21.6057,
+          "buy_point": 1.255,
+          "status": "达到点金术买点",
+          "reached": true,
+          "add_price_1": 1.0062,
+          "add_price_2": 0.8944,
+          "take_profit_1": 1.2298,
+          "take_profit_2": 1.5973
+        },
+        {
+          "code": "563230",
+          "name": "卫星ETF富国",
+          "price": 1.331,
+          "ma120": 1.4851,
+          "deviation": -10.3734,
+          "buy_point": 1.3068,
+          "status": "距离买点还差 1.85%",
+          "reached": false,
+          "add_price_1": 1.1979,
+          "add_price_2": 1.0648,
+          "take_profit_1": 1.4641,
+          "take_profit_2": 1.6633
+        },
+        {
+          "code": "159326",
+          "name": "电网设备ETF华夏",
+          "price": 2.007,
+          "ma120": 1.8474,
+          "deviation": 8.6382,
+          "buy_point": 1.6257,
+          "status": "距离买点还差 23.45%",
+          "reached": false,
+          "add_price_1": 1.8063,
+          "add_price_2": 1.6056,
+          "take_profit_1": 2.2077,
+          "take_profit_2": 2.0691
+        }
+      ]
+    },
+    "error": ""
+  },
+  "stocks": {
+    "ok": true,
+    "payload": {
+      "updated_at": "2026-06-10 10:41:22",
+      "count": 0,
+      "source": "新浪备用",
+      "note": "当前使用新浪备用实时源，缺少 PE、市值等字段，严格筛选可能没有结果。",
+      "checked": 50,
+      "rows": []
+    },
+    "error": ""
+  },
+  "version": "mobile-cloud-1"
+}

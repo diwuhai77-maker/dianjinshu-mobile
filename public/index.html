@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1720" />
+  <title>点金术选股</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --paper: #fff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d8e0ea;
+      --green: #14745f;
+      --gold: #b4862f;
+      --red: #b42318;
+      --shadow: 0 10px 22px rgba(16, 24, 40, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 14px 15px 12px;
+      background: #0f1720;
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { margin: 0; font-size: 21px; letter-spacing: 0; }
+    .stamp { color: #c9d4e2; font-size: 12px; text-align: right; }
+    main { max-width: 760px; margin: 0 auto; padding: 12px 12px 80px; }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      padding: 6px;
+      margin-bottom: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+    }
+    button {
+      min-height: 40px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-weight: 800;
+    }
+    button.active { background: #eaf2ef; color: var(--green); }
+    .panel {
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel.active { display: block; }
+    .head {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    h2 { margin: 0; font-size: 17px; letter-spacing: 0; }
+    .hint { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+    .body { padding: 12px; }
+    .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .metric {
+      min-height: 72px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+    .metric b { display: block; font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
+    .metric span { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .stack { display: grid; gap: 10px; }
+    .card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .card-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .code { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .price { font-size: 22px; font-weight: 850; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      margin-top: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e9f6f1;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .badge.wait { background: #fff5e6; color: #986100; }
+    .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .kv span { display: block; color: var(--muted); font-size: 11px; }
+    .kv b { display: block; margin-top: 2px; font-size: 14px; overflow-wrap: anywhere; }
+    .empty, .error {
+      padding: 18px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      color: var(--muted);
+      text-align: center;
+    }
+    .error { color: var(--red); border-color: #f1b8b4; background: #fff1f0; text-align: left; }
+    @media (min-width: 680px) {
+      .stack { grid-template-columns: repeat(2, 1fr); }
+      .metrics { grid-template-columns: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top">
+      <h1>点金术选股</h1>
+      <div id="stamp" class="stamp">读取中</div>
+    </div>
+  </header>
+
+  <main>
+    <nav class="tabs">
+      <button class="active" data-tab="home">总览</button>
+      <button data-tab="etf">ETF</button>
+      <button data-tab="stock">A股</button>
+    </nav>
+
+    <section id="home" class="panel active">
+      <div class="head">
+        <div>
+          <h2>今日结果</h2>
+          <p class="hint">云端每日自动更新，手机直接查看。</p>
+        </div>
+      </div>
+      <div class="body">
+        <div class="metrics">
+          <div class="metric"><b id="mEtf">--</b><span>ETF买点</span></div>
+          <div class="metric"><b id="mStock">--</b><span>A股候选</span></div>
+          <div class="metric"><b id="mChecked">--</b><span>已检查</span></div>
+          <div class="metric"><b id="mSource">--</b><span>数据源</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="etf" class="panel">
+      <div class="head">
+        <div>
+          <h2>ETF观察</h2>
+          <p class="hint">重点关注 562500 / 512760 / 563230 / 159326。</p>
+        </div>
+      </div>
+      <div class="body"><div id="etfList" class="stack"><div class="empty">读取中</div></div></div>
+    </section>
+
+    <section id="stock" class="panel">
+      <div class="head">
+        <div>
+          <h2>A股候选</h2>
+          <p class="hint">严格条件：PE、股息率、ROE、市值、利润增长、MA120偏离。</p>
+        </div>
+      </div>
+      <div class="body"><div id="stockList" class="stack"><div class="empty">读取中</div></div></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const fmt = (value, digits = 2) => value === null || value === undefined || Number.isNaN(Number(value)) ? "-" : Number(value).toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
+    const pct = value => value === null || value === undefined || Number.isNaN(Number(value)) ? "-" : Number(value).toFixed(2) + "%";
+
+    document.querySelectorAll(".tabs button").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === button));
+        document.querySelectorAll(".panel").forEach(x => x.classList.toggle("active", x.id === button.dataset.tab));
+      });
+    });
+
+    function renderEtfs(rows) {
+      if (!rows.length) {
+        $("etfList").innerHTML = '<div class="empty">暂无 ETF 数据</div>';
+        return;
+      }
+      $("etfList").innerHTML = rows.map(row => `
+        <article class="card">
+          <div class="card-title">
+            <div><strong>${row.name || "-"}</strong><div class="code">${row.code || "-"}</div></div>
+            <div class="price">${fmt(row.price, 3)}</div>
+          </div>
+          <span class="badge ${row.reached ? "" : "wait"}">${row.status || "等待数据"}</span>
+          <div class="kv">
+            <div><span>MA120</span><b>${fmt(row.ma120, 3)}</b></div>
+            <div><span>偏离</span><b>${pct(row.deviation)}</b></div>
+            <div><span>买点</span><b>${fmt(row.buy_point, 3)}</b></div>
+            <div><span>补仓</span><b>${fmt(row.add_price_1, 3)}</b></div>
+            <div><span>深补</span><b>${fmt(row.add_price_2, 3)}</b></div>
+            <div><span>止盈</span><b>${fmt(row.take_profit_1, 3)}</b></div>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderStocks(rows, note) {
+      if (!rows.length) {
+        $("stockList").innerHTML = `<div class="empty">${note || "当前没有符合点金术条件的候选股"}</div>`;
+        return;
+      }
+      $("stockList").innerHTML = rows.slice(0, 50).map(row => `
+        <article class="card">
+          <div class="card-title">
+            <div><strong>${row.name || "-"}</strong><div class="code">${row.code || "-"} · ${row.industry || "-"}</div></div>
+            <div class="price">${fmt(row.price)}</div>
+          </div>
+          <span class="badge">评分 ${row.score || 0}</span>
+          <div class="kv">
+            <div><span>PE</span><b>${fmt(row.pe)}</b></div>
+            <div><span>股息率</span><b>${pct(row.dividend_yield)}</b></div>
+            <div><span>ROE</span><b>${pct(row.roe)}</b></div>
+            <div><span>市值</span><b>${fmt(row.market_cap)}亿</b></div>
+            <div><span>偏离MA120</span><b>${pct(row.deviation)}</b></div>
+            <div><span>止盈</span><b>${fmt(row.take_profit_1)}</b></div>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    async function boot() {
+      try {
+        const res = await fetch("data/latest.json?ts=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) throw new Error("数据文件不存在");
+        const data = await res.json();
+        const etfPayload = data.etf?.payload || {};
+        const stockPayload = data.stocks?.payload || {};
+        const etfs = etfPayload.rows || [];
+        const stocks = stockPayload.rows || [];
+        $("stamp").textContent = data.generated_at || "--";
+        $("mEtf").textContent = etfs.filter(row => row.reached).length;
+        $("mStock").textContent = stockPayload.count ?? stocks.length;
+        $("mChecked").textContent = stockPayload.checked ?? "--";
+        $("mSource").textContent = stockPayload.source || "--";
+        renderEtfs(etfs);
+        renderStocks(stocks, stockPayload.note || data.stocks?.error);
+        if (!data.etf?.ok) $("etfList").innerHTML = `<div class="error">${data.etf?.error || "ETF更新失败"}</div>`;
+      } catch (err) {
+        $("stamp").textContent = "读取失败";
+        $("etfList").innerHTML = `<div class="error">${err.message}</div>`;
+        $("stockList").innerHTML = `<div class="error">${err.message}</div>`;
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>
