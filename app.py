@@ -406,10 +406,10 @@ def scan_stocks(force: bool = False, limit: int | None = 50) -> dict[str, Any]:
         )
         prefiltered = prefiltered[:80]
 
-    rows = add_ma120(prefiltered)
-    result = []
-    watch_rows = []
-    for row in rows:
+    scanned_rows = add_ma120(prefiltered)
+    strict_rows = []
+    backup_rows = []
+    for row in scanned_rows:
         price = finite(row.get("price"))
         ma120 = finite(row.get("ma120"))
         if not math.isfinite(price) or not math.isfinite(ma120) or ma120 <= 0:
@@ -426,28 +426,35 @@ def scan_stocks(force: bool = False, limit: int | None = 50) -> dict[str, Any]:
         row["take_profit_1"] = price * 1.1
         row["take_profit_2"] = ma120 * 1.12
         row["distance_to_buy"] = (price - ma120 * 0.88) / (ma120 * 0.88) * 100
-        if price < ma120 * 0.88 and (dividend_known or not strict_source):
-            row["candidate_type"] = "买点候选"
-            row["reason"] = "低于 MA120 的 88%，符合点金术价格买点"
-            result.append(row)
-        else:
-            row["candidate_type"] = "观察候选"
-            row["reason"] = "基本面通过，等待价格进一步靠近买点"
-            watch_rows.append(row)
 
-    result.sort(key=lambda x: x.get("score", 0), reverse=True)
-    watch_rows.sort(key=lambda x: finite(x.get("distance_to_buy"), 999))
-    display_rows = result if result else watch_rows[:20]
+        if strict_source and price < ma120 * 0.88 and dividend_known:
+            row["candidate_type"] = "买点候选"
+            row["section"] = "strict"
+            row["reason"] = "完整数据源通过 PE、股息率、ROE、市值、利润增长和 MA120 买点"
+            strict_rows.append(row)
+        elif not strict_source:
+            row["candidate_type"] = "备用观察"
+            row["section"] = "backup"
+            row["reason"] = "实时源缺少 PE、市值或股息字段，仅供备用观察，不等同严格候选"
+            backup_rows.append(row)
+
+    strict_rows.sort(key=lambda x: x.get("score", 0), reverse=True)
+    backup_rows.sort(key=lambda x: finite(x.get("distance_to_buy"), 999))
+    backup_rows = backup_rows[:30]
+    display_rows = strict_rows + backup_rows
     note = ""
     if source != "东方财富":
-        note = "当前实时源降级：PE、市值或股息字段可能缺失，已用 ROE、利润增长、MA120 生成观察候选；显示买点候选时仍按 MA120 价格规则判断。"
+        note = "当前实时源降级：严格候选区为空；备用观察区只用 ROE、利润增长和 MA120 生成，不能等同于完整点金术严格候选。"
     payload = {
         "updated_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "count": len(display_rows),
-        "strict_count": len(result),
+        "strict_count": len(strict_rows),
+        "backup_count": len(backup_rows),
         "source": source,
         "note": note,
         "checked": raw_count,
+        "strict_rows": strict_rows,
+        "backup_rows": backup_rows,
         "rows": display_rows,
     }
     write_cache(cache_name, clean_json(payload))

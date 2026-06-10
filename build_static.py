@@ -29,7 +29,7 @@ def main() -> None:
         "generated_at": dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S"),
         "etf": etf,
         "stocks": stocks,
-        "version": "mobile-cloud-2",
+        "version": "mobile-cloud-3",
     }
     target = DATA_DIR / "latest.json"
     target.write_text(json.dumps(app.clean_json(payload), ensure_ascii=False, indent=2), encoding="utf-8")

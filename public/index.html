@@ -124,6 +124,12 @@
     }
     .notice { margin-bottom: 10px; text-align: left; }
     .error { color: var(--red); border-color: #f1b8b4; background: #fff1f0; text-align: left; }
+    .section-title {
+      margin: 12px 0 8px;
+      font-size: 15px;
+      font-weight: 850;
+    }
+    .section-title:first-child { margin-top: 0; }
     @media (min-width: 680px) {
       .stack { grid-template-columns: repeat(2, 1fr); }
       .metrics { grid-template-columns: repeat(4, 1fr); }
@@ -155,7 +161,7 @@
       <div class="body">
         <div class="metrics">
           <div class="metric"><b id="mEtf">--</b><span>ETF买点</span></div>
-          <div class="metric"><b id="mStock">--</b><span>A股候选</span></div>
+          <div class="metric"><b id="mStock">--</b><span>A股 严格/备用</span></div>
           <div class="metric"><b id="mChecked">--</b><span>已检查</span></div>
           <div class="metric"><b id="mSource">--</b><span>数据源</span></div>
         </div>
@@ -176,12 +182,15 @@
       <div class="head">
         <div>
           <h2>A股候选</h2>
-          <p class="hint">优先按 PE、股息率、ROE、市值、利润增长、MA120；备用源缺字段时显示观察候选。</p>
+          <p class="hint">严格候选和备用观察分开显示，避免混淆。</p>
         </div>
       </div>
       <div class="body">
         <div id="stockNote"></div>
-        <div id="stockList" class="stack"><div class="empty">读取中</div></div>
+        <div class="section-title">严格候选</div>
+        <div id="strictStockList" class="stack"><div class="empty">读取中</div></div>
+        <div class="section-title">备用观察候选</div>
+        <div id="backupStockList" class="stack"><div class="empty">读取中</div></div>
       </div>
     </section>
   </main>
@@ -222,19 +231,15 @@
       `).join("");
     }
 
-    function renderStocks(rows, note) {
-      $("stockNote").innerHTML = note ? `<div class="notice">${note}</div>` : "";
-      if (!rows.length) {
-        $("stockList").innerHTML = '<div class="empty">当前没有可展示的 A 股候选</div>';
-        return;
-      }
-      $("stockList").innerHTML = rows.slice(0, 50).map(row => `
+    function stockCard(row) {
+      const isBackup = row.section === "backup" || row.candidate_type === "备用观察";
+      return `
         <article class="card">
           <div class="card-title">
             <div><strong>${row.name || "-"}</strong><div class="code">${row.code || "-"} · ${row.industry || "-"}</div></div>
             <div class="price">${fmt(row.price)}</div>
           </div>
-          <span class="badge ${row.candidate_type === "观察候选" ? "wait" : ""}">${row.candidate_type || "候选"} · 评分 ${row.score || 0}</span>
+          <span class="badge ${isBackup ? "wait" : ""}">${row.candidate_type || "候选"} · 评分 ${row.score || 0}</span>
           <div class="code" style="margin-top:6px;">${row.reason || ""}${row.distance_to_buy !== null && row.distance_to_buy !== undefined ? "，距买点 " + pct(row.distance_to_buy) : ""}</div>
           <div class="kv">
             <div><span>PE</span><b>${fmt(row.pe)}</b></div>
@@ -245,7 +250,21 @@
             <div><span>止盈</span><b>${fmt(row.take_profit_1)}</b></div>
           </div>
         </article>
-      `).join("");
+      `;
+    }
+
+    function renderStockSection(id, rows, emptyText) {
+      if (!rows.length) {
+        $(id).innerHTML = `<div class="empty">${emptyText}</div>`;
+        return;
+      }
+      $(id).innerHTML = rows.slice(0, 50).map(stockCard).join("");
+    }
+
+    function renderStocks(strictRows, backupRows, note) {
+      $("stockNote").innerHTML = note ? `<div class="notice">${note}</div>` : "";
+      renderStockSection("strictStockList", strictRows, "暂无严格候选");
+      renderStockSection("backupStockList", backupRows, "暂无备用观察候选");
     }
 
     async function boot() {
@@ -256,19 +275,22 @@
         const etfPayload = data.etf?.payload || {};
         const stockPayload = data.stocks?.payload || {};
         const etfs = etfPayload.rows || [];
+        const strictRows = stockPayload.strict_rows || [];
+        const backupRows = stockPayload.backup_rows || [];
         const stocks = stockPayload.rows || [];
         $("stamp").textContent = data.generated_at || "--";
         $("mEtf").textContent = etfs.filter(row => row.reached).length;
-        $("mStock").textContent = stockPayload.count ?? stocks.length;
+        $("mStock").textContent = `${strictRows.length}/${backupRows.length}`;
         $("mChecked").textContent = stockPayload.checked ?? "--";
         $("mSource").textContent = stockPayload.source || "--";
         renderEtfs(etfs);
-        renderStocks(stocks, stockPayload.note || data.stocks?.error);
+        renderStocks(strictRows, backupRows, stockPayload.note || data.stocks?.error);
         if (!data.etf?.ok) $("etfList").innerHTML = `<div class="error">${data.etf?.error || "ETF 更新失败"}</div>`;
       } catch (err) {
         $("stamp").textContent = "读取失败";
         $("etfList").innerHTML = `<div class="error">${err.message}</div>`;
-        $("stockList").innerHTML = `<div class="error">${err.message}</div>`;
+        $("strictStockList").innerHTML = `<div class="error">${err.message}</div>`;
+        $("backupStockList").innerHTML = `<div class="error">${err.message}</div>`;
       }
     }
 
